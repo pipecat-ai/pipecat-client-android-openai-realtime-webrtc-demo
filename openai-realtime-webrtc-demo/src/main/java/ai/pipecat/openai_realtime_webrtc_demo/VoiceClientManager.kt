@@ -4,11 +4,14 @@ import ai.pipecat.client.RTVIClient
 import ai.pipecat.client.RTVIClientOptions
 import ai.pipecat.client.RTVIClientParams
 import ai.pipecat.client.RTVIEventCallbacks
+import ai.pipecat.client.helper.LLMFunctionCall
+import ai.pipecat.client.helper.LLMHelper
 import ai.pipecat.client.openai_realtime_webrtc.OpenAIRealtimeSessionConfig
 import ai.pipecat.client.openai_realtime_webrtc.OpenAIRealtimeWebRTCTransport
 import ai.pipecat.client.result.Future
 import ai.pipecat.client.result.RTVIError
 import ai.pipecat.client.result.Result
+import ai.pipecat.client.transport.MsgClientToServer
 import ai.pipecat.client.transport.MsgServerToClient
 import ai.pipecat.client.types.ActionDescription
 import ai.pipecat.client.types.Participant
@@ -26,6 +29,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import kotlinx.serialization.json.JsonElement
 
 @Immutable
 data class Error(val message: String)
@@ -65,6 +69,8 @@ class VoiceClientManager(private val context: Context) {
 
     fun start() {
 
+        infix fun String.toStr(rhs: String) = this to Value.Str(rhs)
+
         if (client.value != null) {
             return
         }
@@ -91,14 +97,26 @@ class VoiceClientManager(private val context: Context) {
                         )
                     ),*/
                     initialConfig = OpenAIRealtimeSessionConfig(
-                        turnDetection = Value.Object(
-                            "type" to Value.Str("semantic_vad")
-                        ),
-                        inputAudioNoiseReduction = Value.Object(
-                            "type" to Value.Str("near_field")
-                        ),
-                        inputAudioTranscription = Value.Object(
-                            "model" to Value.Str("whisper-1")
+                        voice = "ballad",
+                        turnDetection = Value.Object("type" toStr "semantic_vad"),
+                        inputAudioNoiseReduction = Value.Object("type" toStr "near_field"),
+                        inputAudioTranscription = Value.Object("model" toStr "gpt-4o-transcribe"),
+                        tools = Value.Array(
+                            Value.Object(
+                                "type" toStr "function",
+                                "name" toStr "get_current_weather",
+                                "description" toStr "Get the current weather for a given location",
+                                "parameters" to Value.Object(
+                                    "type" toStr "object",
+                                    "properties" to Value.Object(
+                                        "location" to Value.Object(
+                                            "type" toStr "string",
+                                            "description" toStr "The city and country, eg. San Francisco, USA",
+                                        )
+                                    ),
+                                    "required" to Value.Array(Value.Str("location"))
+                                )
+                            )
                         )
                     )
                 )
@@ -196,9 +214,25 @@ class VoiceClientManager(private val context: Context) {
             override fun onRemoteAudioLevel(level: Float, participant: Participant) {
                 botAudioLevel.floatValue = level
             }
+
+            override fun onGenericMessage(msg: MsgServerToClient) {
+                Log.i(TAG, "onGenericMessage: $msg")
+            }
         }
 
         val client = RTVIClient(OpenAIRealtimeWebRTCTransport.Factory(context), callbacks, options)
+
+        val llmHelper = LLMHelper(object : LLMHelper.Callbacks() {
+            override fun onLLMFunctionCall(
+                func: LLMFunctionCall,
+                onResult: (Value) -> Unit
+            ) {
+                Log.i(TAG, "Function call from bot: $func")
+                onResult(Value.Str("27 degrees celsius, rainy"))
+            }
+        })
+
+        client.registerHelper("llm", llmHelper)
 
         client.connect().displayErrors().withErrorCallback {
             callbacks.onDisconnected()
@@ -216,4 +250,13 @@ class VoiceClientManager(private val context: Context) {
     fun stop() {
         client.value?.disconnect()?.displayErrors()
     }
+
+    fun sendCustomMessage(msg: JsonElement) =
+        client.value?.sendMessage(
+            MsgClientToServer(
+                type = "custom-request",
+                data = msg
+            )
+        )
+
 }
