@@ -98,9 +98,9 @@ class VoiceClientManager(private val context: Context) {
                     ),*/
                     initialConfig = OpenAIRealtimeSessionConfig(
                         voice = "ballad",
-                        turnDetection = Value.Object("type" to Value.Str("semantic_vad")),
-                        inputAudioNoiseReduction = Value.Object("type" to Value.Str("near_field")),
-                        inputAudioTranscription = Value.Object("model" to Value.Str("gpt-4o-transcribe")),
+                        turnDetection = Value.Object("type" toStr "semantic_vad"),
+                        inputAudioNoiseReduction = Value.Object("type" toStr "near_field"),
+                        inputAudioTranscription = Value.Object("model" toStr "gpt-4o-transcribe"),
                         tools = Value.Array(
                             Value.Object(
                                 "type" toStr "function",
