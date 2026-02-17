@@ -1,19 +1,21 @@
 package ai.pipecat.openai_realtime_webrtc_demo
 
-import ai.pipecat.client.RTVIClient
-import ai.pipecat.client.RTVIClientOptions
-import ai.pipecat.client.RTVIClientParams
-import ai.pipecat.client.RTVIEventCallbacks
+import ai.pipecat.client.PipecatClient
+import ai.pipecat.client.PipecatClientOptions
+import ai.pipecat.client.PipecatEventCallbacks
 import ai.pipecat.client.openai_realtime_webrtc.OpenAIRealtimeSessionConfig
 import ai.pipecat.client.openai_realtime_webrtc.OpenAIRealtimeWebRTCTransport
+import ai.pipecat.client.openai_realtime_webrtc.OpenAIServiceOptions
+import ai.pipecat.client.openai_realtime_webrtc.PipecatClientOpenAIRealtimeWebRTC
 import ai.pipecat.client.result.Future
 import ai.pipecat.client.result.RTVIError
 import ai.pipecat.client.result.Result
 import ai.pipecat.client.transport.MsgServerToClient
-import ai.pipecat.client.types.ActionDescription
+import ai.pipecat.client.types.BotOutputData
+import ai.pipecat.client.types.BotReadyData
+import ai.pipecat.client.types.LLMContextMessage
 import ai.pipecat.client.types.Participant
 import ai.pipecat.client.types.PipecatMetrics
-import ai.pipecat.client.types.ServiceConfig
 import ai.pipecat.client.types.Tracks
 import ai.pipecat.client.types.Transcript
 import ai.pipecat.client.types.TransportState
@@ -26,6 +28,9 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Immutable
 data class Error(val message: String)
@@ -37,16 +42,11 @@ class VoiceClientManager(private val context: Context) {
         private const val TAG = "VoiceClientManager"
     }
 
-    private val client = mutableStateOf<RTVIClient?>(null)
+    private val client = mutableStateOf<PipecatClientOpenAIRealtimeWebRTC?>(null)
 
     val state = mutableStateOf<TransportState?>(null)
 
     val errors = mutableStateListOf<Error>()
-
-    val actionDescriptions =
-        mutableStateOf<Result<List<ActionDescription>, RTVIError>?>(null)
-
-    val expiryTime = mutableStateOf<Timestamp?>(null)
 
     val botReady = mutableStateOf(false)
     val botIsTalking = mutableStateOf(false)
@@ -71,43 +71,31 @@ class VoiceClientManager(private val context: Context) {
 
         val apiKey = Preferences.apiKey.value ?: return
 
-        val options = RTVIClientOptions(
-            params = RTVIClientParams(
-                baseUrl = null,
-                config = OpenAIRealtimeWebRTCTransport.buildConfig(
-                    apiKey = apiKey,
-                    /*initialMessages = listOf(
-                        LLMContextMessage(
-                            role = "user",
-                            content = "Please name an interesting landmark."
-                        ),
-                        LLMContextMessage(
-                            role = "assistant",
-                            content = "Elizabeth tower."
-                        ),
-                        LLMContextMessage(
-                            role = "user",
-                            content = "How tall is it?"
-                        )
-                    ),*/
-                    initialConfig = OpenAIRealtimeSessionConfig(
-                        turnDetection = Value.Object(
-                            "type" to Value.Str("semantic_vad")
-                        ),
-                        inputAudioNoiseReduction = Value.Object(
-                            "type" to Value.Str("near_field")
-                        ),
-                        inputAudioTranscription = Value.Object(
-                            "model" to Value.Str("whisper-1")
-                        )
-                    )
-                )
-            )
+        val config = OpenAIRealtimeSessionConfig(
+            turnDetection = Value.Object(
+                "type" to Value.Str("semantic_vad")
+            ),
+            inputAudioNoiseReduction = Value.Object(
+                "type" to Value.Str("near_field")
+            ),
+            inputAudioTranscription = Value.Object(
+                "model" to Value.Str("whisper-1")
+            ),
+            voice = "marin"
+        )
+
+        val options = OpenAIServiceOptions(
+            apiKey = apiKey,
+            sessionConfig = config,
+            initialMessages = listOf(LLMContextMessage(
+                role = LLMContextMessage.Role.System,
+                content = "You are a helpful voice assistant. Start the conversation and greet the user."
+            ))
         )
 
         state.value = TransportState.Disconnected
 
-        val callbacks = object : RTVIEventCallbacks() {
+        val callbacks = object : PipecatEventCallbacks() {
             override fun onTransportStateChanged(state: TransportState) {
                 this@VoiceClientManager.state.value = state
             }
@@ -119,23 +107,17 @@ class VoiceClientManager(private val context: Context) {
                 }
             }
 
-            override fun onBotReady(version: String, config: List<ServiceConfig>) {
-
-                Log.i(TAG, "Bot ready. Version $version, config: $config")
-
+            override fun onBotReady(data: BotReadyData) {
+                Log.i(TAG, "Bot ready. Version ${data.version}")
                 botReady.value = true
-
-                client.value?.describeActions()?.withCallback {
-                    actionDescriptions.value = it
-                }
             }
 
-            override fun onPipecatMetrics(data: PipecatMetrics) {
+            override fun onMetrics(data: PipecatMetrics) {
                 Log.i(TAG, "Pipecat metrics: $data")
             }
 
-            override fun onBotTTSText(data: MsgServerToClient.Data.BotTTSTextData) {
-                Log.i(TAG, "Bot TTS text: ${data.text}")
+            override fun onBotOutput(data: BotOutputData) {
+                Log.i(TAG, "Bot output: ${data.text}")
             }
 
             override fun onUserTranscript(data: Transcript) {
@@ -171,17 +153,10 @@ class VoiceClientManager(private val context: Context) {
                 this@VoiceClientManager.mic.value = mic
             }
 
-            override fun onConnected() {
-                expiryTime.value = client.value?.expiry?.let(Timestamp::ofEpochSecs)
-            }
-
             override fun onDisconnected() {
-                expiryTime.value = null
-                actionDescriptions.value = null
                 botIsTalking.value = false
                 userIsTalking.value = false
                 state.value = null
-                actionDescriptions.value = null
                 botReady.value = false
                 tracks.value = null
 
@@ -198,9 +173,12 @@ class VoiceClientManager(private val context: Context) {
             }
         }
 
-        val client = RTVIClient(OpenAIRealtimeWebRTCTransport.Factory(context), callbacks, options)
+        val client = PipecatClient(
+            OpenAIRealtimeWebRTCTransport(context),
+            PipecatClientOptions(callbacks = callbacks)
+        )
 
-        client.connect().displayErrors().withErrorCallback {
+        client.connect(options).displayErrors().withErrorCallback {
             callbacks.onDisconnected()
         }
 

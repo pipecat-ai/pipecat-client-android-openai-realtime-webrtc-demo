@@ -17,8 +17,6 @@ fun InCallLayout(voiceClientManager: VoiceClientManager) {
 
     Column(Modifier.fillMaxSize()) {
 
-        InCallHeader(expiryTime = voiceClientManager.expiryTime.value)
-
         Box(
             modifier = Modifier
                 .weight(1f)
