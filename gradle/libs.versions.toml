@@ -1,15 +1,15 @@
 [versions]
-accompanistPermissions = "0.34.0"
-agp = "8.5.2"
-constraintlayoutCompose = "1.0.1"
-pipecatClient = "0.3.3"
-kotlin = "2.0.20"
-coreKtx = "1.13.1"
-lifecycleRuntimeKtx = "2.8.6"
-activityCompose = "1.9.2"
-composeBom = "2024.09.03"
-kotlinxSerializationJson = "1.7.1"
-kotlinxSerializationPlugin = "2.0.20"
+accompanistPermissions = "0.37.3"
+agp = "8.9.3"
+constraintlayoutCompose = "1.1.1"
+pipecatClient = "1.2.0"
+kotlin = "2.3.10"
+coreKtx = "1.17.0"
+lifecycleRuntimeKtx = "2.10.0"
+activityCompose = "1.12.4"
+composeBom = "2026.02.00"
+kotlinxSerializationJson = "1.10.0"
+kotlinxSerializationPlugin = "2.3.10"
 
 [libraries]
 accompanist-permissions = { module = "com.google.accompanist:accompanist-permissions", version.ref = "accompanistPermissions" }
